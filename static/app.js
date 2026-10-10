@@ -72,15 +72,22 @@ let announcements = {}; // name -> 公告文本
 /** 状态表格 + 断连/解析失败信息 */
 function statusHTML(s) {
   if (s && s.connected && s.chips.length) {
+    const cardOwners = {};
+    for (const m of s.models || []) for (const cd of m.cards || []) (cardOwners[cd] = cardOwners[cd] || []).push(m.model);
     const rows = s.chips.map((c) => {
       const hbmPct = c.hbm_total ? (c.hbm_used / c.hbm_total) * 100 : null;
       const hbmCell = hbmPct === null
         ? `${c.hbm_used ?? "-"} MB`
         : `${bar(hbmPct, 50, 85, "hbm")} <span class="usage-label">(${c.hbm_used}/${c.hbm_total} MB)</span>`;
+      const plist = (s.procs || []).filter((p) => p.card === c.id);
+      const procCell = plist.length
+        ? plist.map((p) => `<div class="proc${p.model ? " proc-model" : ""}" title="PID ${p.pid}${p.container ? " · " + esc(p.container) : ""}${p.user ? " · " + esc(p.user) : ""}">${esc(p.name)} <span class="proc-mem">${p.mem} MB</span>${p.model ? ` <span class="proc-owner">[${esc(p.model)}]</span>` : ""}</div>`).join("")
+        : "-";
       return `<tr>
-        <td>NPU ${c.id}</td>
+        <td class="${cardOwners[c.id] ? "chip-used" : ""}"${cardOwners[c.id] ? ` title="${esc(cardOwners[c.id].join(", "))}"` : ""}>NPU ${c.id}${cardOwners[c.id] ? " \u25cf" : ""}</td>
         <td class="usage-cell">${bar(c.aicore ?? 0, 50, 85, "core")}</td>
         <td class="usage-cell">${hbmCell}</td>
+        <td class="proc-cell">${procCell}</td>
       </tr>`;
     }).join("");
     const modelBlock = (s.models || []).length
@@ -89,12 +96,12 @@ function statusHTML(s) {
           ${(s.models || []).map((m) => `
           <div class="model-item" title="${esc(m.model)}">
             <div class="model-name">${esc(m.model)}<span class="model-cont"> · ${esc(m.container)}</span></div>
-            <div class="model-row2">PID ${m.pid} · ${esc(fmtUptime(m.uptime))}</div>
+            <div class="model-row2"><span class="model-fw model-fw-${esc(m.fw || "unknown")}">${esc(m.fw || "?")}</span> PID ${m.pid} · ${esc(fmtUptime(m.uptime))}${(m.cards && m.cards.length) ? ` · 卡 ${m.cards.join(",")}` : ""}</div>
           </div>`).join("")}
         </div>`
       : "";
     return `<table class="chip-table">
-        <tr><th>卡</th><th>AI Core</th><th>HBM</th></tr>${rows}
+        <tr><th>卡</th><th>AI Core</th><th>HBM</th><th>进程</th></tr>${rows}
       </table>
       ${modelBlock}
       <div class="host-updated">更新于 ${s.updated_at ? fmtDT(s.updated_at) : "-"}</div>`;

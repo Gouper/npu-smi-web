@@ -9,6 +9,6 @@ for n in $(npu-smi info -l 2>/dev/null | awk '/NPU ID[[:space:]]*:/{print $NF}')
     /Aicore Usage Rate/ {ac=$NF}
     /HBM Usage Rate/ {hu=$NF}
     /HBM Capacity/ {hc=$NF}
-    /Chip ID/ {id=npu*2+$NF; used=int(hc*hu/100); printf "| %d | %s | %d / %d |\n", id, ac, used, hc}
+    /Chip ID/ {id=npu; used=int(hc*hu/100); printf "| %d | %s | %d / %d |\n", id, ac, used, hc}
   '
 done

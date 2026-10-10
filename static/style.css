@@ -469,3 +469,24 @@ main { position: relative; padding: 28px 32px 16px; }
   user-select: none;
   white-space: nowrap;
 }
+
+.model-fw { display: inline-block; padding: 0 5px; border-radius: 4px; font-size: 11px; font-weight: 700; line-height: 16px; }
+.model-fw-vllm { background: #e8f0fe; color: #1a73e8; }
+.model-fw-sglang { background: #e6f4ea; color: #188038; }
+.model-fw-unknown { background: #f1f3f4; color: #5f6368; }
+
+.chip-used { color: var(--c-model, #1a73e8); font-weight: 700; }
+
+.proc-cell { font-size: 12px; max-width: 240px; }
+.proc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proc-mem { color: var(--muted); }
+.proc-owner { color: var(--c-model, #1a73e8); font-weight: 600; }
+
+/* ---- 进程列布局修正: 卡片加宽 + 表格定宽 ---- */
+.host-card { flex: 1 1 640px; min-width: 640px; max-width: 720px; }
+.chip-table { table-layout: fixed; }
+.chip-table th:nth-child(1), .chip-table td:first-child { width: 66px; }
+.chip-table th:nth-child(2) { width: 128px; }
+.chip-table th:nth-child(3) { width: 236px; }
+.chip-table td { overflow: hidden; }
+.proc-cell { max-width: none; }

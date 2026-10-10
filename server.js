@@ -99,7 +99,7 @@ function pollHost(name) {
       const prev = status[name];
       const ok = result.connected && (result.chips?.length || 0) > 0;
       if (ok) {
-        status[name] = { ...result, updated_at: nowIso(), consecutive_failures: 0, models: status[name].models };
+        status[name] = { ...result, updated_at: nowIso(), consecutive_failures: 0, models: status[name].models, procs: status[name].procs };
       } else {
         const fails = (prev.consecutive_failures || 0) + 1;
         if (fails >= RETRY_LIMIT) {
@@ -156,7 +156,7 @@ setInterval(pollAll, POLL_INTERVAL);
  *         (用于容器 PID namespace 隔离, 宿主 ps 看不到容器内进程的场景)
  */
 function parseModels(text) {
-  const psLines = [], dcLines = [], cgLines = [], ctLines = [];
+  const psLines = [], dcLines = [], cgLines = [], ctLines = [], pmLines = [], ptLines = [], pcLines = [];
   let cur = null;
   for (const line of String(text || "").split("\n")) {
     const t = line.trim();
@@ -164,6 +164,9 @@ function parseModels(text) {
     else if (t === "@DC") cur = dcLines;
     else if (t === "@CG") cur = cgLines;
     else if (t === "@CT") cur = ctLines;
+    else if (t === "@PM") cur = pmLines;
+    else if (t === "@PT") cur = ptLines;
+    else if (t === "@PC") cur = pcLines;
     else if (cur && t) cur.push(t);
   }
   const dcMap = {};
@@ -178,31 +181,79 @@ function parseModels(text) {
   }
   const models = [];
   const seen = new Set();
-  const push = (model, container, pid, uptime) => {
+  const push = (model, container, pid, uptime, fw) => {
     const key = model + "|" + container;
     if (seen.has(key)) return;
     seen.add(key);
-    models.push({ model: model.replace(/\/+$/, "").split("/").pop(), container, pid: parseInt(pid, 10), uptime });
+    models.push({ model: model.replace(/\/+$/, "").split("/").pop(), container, pid: parseInt(pid, 10), uptime, fw });
   };
   for (const l of psLines) {
     const m = l.match(/^(\d+)\s+(\S+)\s+(.*)$/);
     if (!m) continue;
     const pid = m[1], etime = m[2], args = m[3];
-    const mp = args.match(/--model(?:-path)?\s+(\S+)/);
+    const mp = args.match(/--served-model-name\s+(\S+)/) || args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/);
     if (!mp) continue;
     const cid = cgMap[pid];
     const container = (cid && dcMap[cid.slice(0, 12)]) || "宿主";
-    push(mp[1], container, pid, etime);
+    push(mp[1], container, pid, etime, /vllm/i.test(args) ? "vllm" : "sglang");
   }
   for (const l of ctLines) {
     const parts = l.split("\t");
     if (parts.length < 4) continue;
     const pid = parts[0], etime = parts[1], container = parts[2], args = parts.slice(3).join(" ");
-    const mp = args.match(/--model(?:-path)?\s+(\S+)/);
+    const mp = args.match(/--served-model-name\s+(\S+)/) || args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/);
     if (!mp) continue;
-    push(mp[1], container, pid, etime);
+    push(mp[1], container, pid, etime, /vllm/i.test(args) ? "vllm" : "sglang");
   }
-  return { models };
+  // 卡占用归属: 卡上进程的祖先链中包含模型主 PID, 即视为该模型占用此卡
+  const cardPids = {};
+  for (const l of pmLines) {
+    const mm = l.match(/^(\d+)\s+(\d+)/);
+    if (mm) (cardPids[+mm[1]] = cardPids[+mm[1]] || new Set()).add(mm[2]);
+  }
+  const ppid = {};
+  for (const l of ptLines) {
+    const mm = l.match(/^(\d+)\s+(\d+)$/);
+    if (mm) ppid[mm[1]] = mm[2];
+  }
+  const isDesc = (pid, root) => {
+    let cur = String(pid);
+    for (let g = 0; cur && g < 64; g++) {
+      if (cur === String(root)) return true;
+      cur = ppid[cur];
+    }
+    return false;
+  };
+  for (const m of models) {
+    m.cards = Object.keys(cardPids)
+      .filter((c) => [...cardPids[c]].some((p) => isDesc(p, m.pid)))
+      .map(Number)
+      .sort((a, b) => a - b);
+  }
+  // 全量卡进程: 卡/PID/进程名/显存, 归属到模型(祖先链)与容器(cgroup)
+  const pcMap = {};
+  for (const l of pcLines) {
+    const mm = l.match(/^(\d+)\s+([0-9a-z]*)\s*(\S*)$/i);
+    if (mm) pcMap[mm[1]] = { cid: (mm[2] || "").toLowerCase(), user: mm[3] || "" };
+  }
+  const procs = [];
+  for (const l of pmLines) {
+    const mm = l.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(\d+)$/);
+    if (!mm) continue;
+    const pid = mm[2];
+    const owner = models.find((m) => isDesc(pid, m.pid));
+    const pc = pcMap[pid] || {};
+    procs.push({
+      card: +mm[1],
+      pid: +pid,
+      name: mm[3],
+      mem: +mm[4],
+      model: owner ? owner.model : null,
+      container: (pc.cid && dcMap[pc.cid.slice(0, 12)]) || null,
+      user: pc.user || null,
+    });
+  }
+  return { models, procs };
 }
 
 function pollModels(name) {
@@ -220,10 +271,13 @@ function pollModels(name) {
     };
     const timer = setTimeout(() => done({}), 15000);
     const cmd = [
-      'echo "@PS"; ps -eo pid,etime,args | grep -E "sglang(\\.launch_server| serve)" | grep -v grep',
+      'echo "@PS"; ps -eo pid,etime,args | grep -E "sglang(\\.launch_server| serve)|vllm serve|vllm\\.entrypoints" | grep -v grep',
       'echo "@DC"; docker ps --format "{{.Names}}|{{.ID}}"',
-      'echo "@CG"; for p in $(pgrep -f "sglang\\.launch_server|sglang serve"); do echo "$p $(grep -oE "docker[-/][0-9a-f]{12,}" /proc/$p/cgroup 2>/dev/null | head -1 | cut -c 8-)"; done',
-      'echo "@CT"; for c in $(docker ps --format "{{.Names}}"); do docker top "$c" -eo pid,etime,args 2>/dev/null | awk -v c="$c" \'NR>1 && ($0 ~ /sglang\\.launch_server/ || $0 ~ /sglang serve/) { pid=$1; et=$2; sub(/^[^ \\t]+[ \\t]+[^ \\t]+[ \\t]+/, ""); print pid"\\t"et"\\t"c"\\t"$0 }\'; done',
+      'echo "@CG"; for p in $(pgrep -f "sglang\\.launch_server|sglang serve|vllm serve|vllm\\.entrypoints"); do echo "$p $(grep -oE "docker[-/][0-9a-f]{12,}" /proc/$p/cgroup 2>/dev/null | head -1 | cut -c 8-)"; done',
+      'echo "@CT"; for c in $(docker ps --format "{{.Names}}"); do docker top "$c" -eo pid,etime,args 2>/dev/null | awk -v c="$c" \'NR>1 && ($0 ~ /sglang\\.launch_server/ || $0 ~ /sglang serve/ || $0 ~ /vllm serve/ || $0 ~ /vllm.entrypoints/) { pid=$1; et=$2; sub(/^[^ \\t]+[ \\t]+[^ \\t]+[ \\t]+/, ""); print pid"\\t"et"\\t"c"\\t"$0 }\'; done',
+      'echo "@PM"; PM=$(for i in $(npu-smi info -l 2>/dev/null | awk \'/NPU ID[[:space:]]*:/{print $NF}\'); do npu-smi info -t proc-mem -i "$i" 2>/dev/null | awk -v c="$i" \'$1=="Process" && $2 ~ /^id:[0-9]+/ { print c"\\t"substr($2,4)"\\t"substr($4,6)"\\t"substr($6,12) }\'; done); echo "$PM"',
+      'echo "@PC"; for p in $(echo "$PM" | awk \'{print $2}\'); do echo "$p $(grep -oE "docker[-/][0-9a-f]{12,}" /proc/$p/cgroup 2>/dev/null | head -1 | cut -c 8-) $(ps -o user= -p $p 2>/dev/null)"; done',
+      'echo "@PT"; ps -eo pid,ppid',
     ].join("; ");
     conn
       .on("ready", () => {
@@ -353,6 +407,7 @@ app.get("/api/hosts", (_req, res) => {
       updated_at: s.updated_at,
       raw: s.connected && !s.error ? "" : String(s.raw || "").slice(-2000),
       models: s.models || [],
+      procs: s.procs || [],
     };
   }
   res.json({ now: nowIso(), hosts });
