@@ -23,6 +23,12 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+/** MB -> 紧凑显示 (>=1G 用 GB, 保留 1 位小数) */
+function fmtMem(mb) {
+  const n = Number(mb) || 0;
+  return n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`;
+}
+
 function bar(pct, warn = 50, high = 85, kind = "") {
   const p = Math.max(0, Math.min(100, pct));
   const cls = p >= high ? "high" : p >= warn ? "warn" : "";
@@ -78,10 +84,20 @@ function statusHTML(s) {
       const hbmPct = c.hbm_total ? (c.hbm_used / c.hbm_total) * 100 : null;
       const hbmCell = hbmPct === null
         ? `${c.hbm_used ?? "-"} MB`
-        : `${bar(hbmPct, 50, 85, "hbm")} <span class="usage-label">(${c.hbm_used}/${c.hbm_total} MB)</span>`;
+        : `${bar(hbmPct, 50, 85, "hbm")} <span class="usage-label" title="${c.hbm_used} / ${c.hbm_total} MB">${fmtMem(c.hbm_used)} / ${fmtMem(c.hbm_total)}</span>`;
       const plist = (s.procs || []).filter((p) => p.card === c.id);
-      const procCell = plist.length
-        ? plist.map((p) => `<div class="proc${p.model ? " proc-model" : ""}" title="PID ${p.pid}${p.container ? " · " + esc(p.container) : ""}${p.user ? " · " + esc(p.user) : ""}">${esc(p.name)} <span class="proc-mem">${p.mem} MB</span>${p.model ? ` <span class="proc-owner">[${esc(p.model)}]</span>` : ""}</div>`).join("")
+      const agg = {};
+      for (const p of plist) {
+        const k = p.name + "|" + (p.model || "");
+        if (!agg[k]) agg[k] = { ...p, count: 0, mem: 0, pids: [] };
+        agg[k].count++; agg[k].mem += p.mem; agg[k].pids.push(p.pid);
+      }
+      const items = Object.values(agg);
+      const procLine = (p) => `<div class="proc${p.model ? " proc-model" : ""}" title="PID ${p.pids.join(", ")}${p.container ? " · " + esc(p.container) : ""}${p.user ? " · " + esc(p.user) : ""}">${esc(p.name)}${p.count > 1 ? ` ×${p.count}` : ""} <span class="proc-mem">${fmtMem(p.mem)}</span>${p.model ? ` <span class="proc-owner">[${esc(p.model)}]</span>` : ""}</div>`;
+      const hidden = items.slice(3);
+      const procCell = items.length
+        ? items.slice(0, 3).map(procLine).join("")
+          + (hidden.length ? `<div class="proc proc-more" title="${esc(hidden.map((p) => `${p.name} PID ${p.pids.join(",")}`).join("\n"))}">+${hidden.length} 更多…</div>` : "")
         : "-";
       return `<tr>
         <td class="${cardOwners[c.id] ? "chip-used" : ""}"${cardOwners[c.id] ? ` title="${esc(cardOwners[c.id].join(", "))}"` : ""}>NPU ${c.id}${cardOwners[c.id] ? " \u25cf" : ""}</td>
@@ -95,8 +111,8 @@ function statusHTML(s) {
           <div class="model-title">运行模型</div>
           ${(s.models || []).map((m) => `
           <div class="model-item" title="${esc(m.model)}">
-            <div class="model-name">${esc(m.model)}<span class="model-cont"> · ${esc(m.container)}</span></div>
-            <div class="model-row2"><span class="model-fw model-fw-${esc(m.fw || "unknown")}">${esc(m.fw || "?")}</span> PID ${m.pid} · ${esc(fmtUptime(m.uptime))}${(m.cards && m.cards.length) ? ` · 卡 ${m.cards.join(",")}` : ""}</div>
+            <div class="model-name"><span class="model-fw model-fw-${esc(m.fw || "unknown")}">${esc(m.fw || "?")}</span>${esc(m.model)}<span class="model-cont"> · ${esc(m.container)}</span></div>
+            <div class="model-row2">PID ${m.pid} · ${esc(fmtUptime(m.uptime))}${(m.cards && m.cards.length) ? ` · 卡 ${m.cards.join(",")}` : ""}</div>
           </div>`).join("")}
         </div>`
       : "";

@@ -17,7 +17,7 @@ const QUEUE_FILE = path.join(DATA_DIR, "queue.json");
 const ANN_FILE = path.join(DATA_DIR, "announcements.json");
 
 const POLL_INTERVAL = 5 * 1000; // NPU 状态轮询间隔
-const MODELS_INTERVAL = 30 * 1000; // 运行模型采集间隔
+const MODELS_INTERVAL = 10 * 1000; // 运行模型采集间隔
 const MAX_FUTURE_DAYS = 7;      // 只能排未来一周
 
 const HOSTS = {};

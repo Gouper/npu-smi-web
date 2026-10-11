@@ -490,3 +490,28 @@ main { position: relative; padding: 28px 32px 16px; }
 .chip-table th:nth-child(3) { width: 236px; }
 .chip-table td { overflow: hidden; }
 .proc-cell { max-width: none; }
+
+/* ---- 排版优化: HBM 紧凑后为进程列腾空间 ---- */
+.chip-table th:nth-child(2) { width: 122px; }
+.chip-table th:nth-child(3) { width: 196px; }
+.usage-label { font-size: 10.5px; letter-spacing: 0; }
+.proc-more { color: var(--muted); font-style: italic; cursor: default; }
+.chip-table td { vertical-align: top; }
+
+/* ---- 框架徽标: 实心胶囊, 高辨识 ---- */
+.model-fw {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 16px;
+  vertical-align: 2px;
+  margin-right: 7px;
+  color: oklch(0.99 0.005 90);
+  background: var(--faint);
+}
+.model-fw-vllm { background: oklch(0.60 0.15 70); color: oklch(0.99 0.01 90); }
+.model-fw-sglang { background: oklch(0.52 0.18 350); color: oklch(0.99 0.01 90); }
+.model-fw-unknown { background: var(--faint); color: var(--card); }
