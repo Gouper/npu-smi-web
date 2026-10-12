@@ -185,13 +185,13 @@ function parseModels(text) {
     const key = model + "|" + container;
     if (seen.has(key)) return;
     seen.add(key);
-    models.push({ model: model.replace(/\/+$/, "").split("/").pop(), container, pid: parseInt(pid, 10), uptime, fw });
+    models.push({ model: model.replace(/\/+$/, ""), container, pid: parseInt(pid, 10), uptime, fw });
   };
   for (const l of psLines) {
     const m = l.match(/^(\d+)\s+(\S+)\s+(.*)$/);
     if (!m) continue;
     const pid = m[1], etime = m[2], args = m[3];
-    const mp = args.match(/--served-model-name\s+(\S+)/) || args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/);
+    const mp = args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/) || args.match(/--served-model-name\s+(\S+)/);
     if (!mp) continue;
     const cid = cgMap[pid];
     const container = (cid && dcMap[cid.slice(0, 12)]) || "宿主";
@@ -201,7 +201,7 @@ function parseModels(text) {
     const parts = l.split("\t");
     if (parts.length < 4) continue;
     const pid = parts[0], etime = parts[1], container = parts[2], args = parts.slice(3).join(" ");
-    const mp = args.match(/--served-model-name\s+(\S+)/) || args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/);
+    const mp = args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/) || args.match(/--served-model-name\s+(\S+)/);
     if (!mp) continue;
     push(mp[1], container, pid, etime, /vllm/i.test(args) ? "vllm" : "sglang");
   }
