@@ -275,7 +275,7 @@ function pollModels(name) {
       'echo "@DC"; docker ps --format "{{.Names}}|{{.ID}}"',
       'echo "@CG"; for p in $(pgrep -f "sglang\\.launch_server|sglang serve|vllm serve|vllm\\.entrypoints"); do echo "$p $(grep -oE "docker[-/][0-9a-f]{12,}" /proc/$p/cgroup 2>/dev/null | head -1 | cut -c 8-)"; done',
       'echo "@CT"; for c in $(docker ps --format "{{.Names}}"); do docker top "$c" -eo pid,etime,args 2>/dev/null | awk -v c="$c" \'NR>1 && ($0 ~ /sglang\\.launch_server/ || $0 ~ /sglang serve/ || $0 ~ /vllm serve/ || $0 ~ /vllm.entrypoints/) { pid=$1; et=$2; sub(/^[^ \\t]+[ \\t]+[^ \\t]+[ \\t]+/, ""); print pid"\\t"et"\\t"c"\\t"$0 }\'; done',
-      'echo "@PM"; PM=$(for i in $(npu-smi info -l 2>/dev/null | awk \'/NPU ID[[:space:]]*:/{print $NF}\'); do npu-smi info -t proc-mem -i "$i" 2>/dev/null | awk -v c="$i" \'$1=="Process" && $2 ~ /^id:[0-9]+/ { print c"\\t"substr($2,4)"\\t"substr($4,6)"\\t"substr($6,12) }\'; done); echo "$PM"',
+      'echo "@PM"; PM=$(for i in $(npu-smi info -l 2>/dev/null | awk \'/NPU ID[[:space:]]*:/{print $NF}\'); do npu-smi info -t proc-mem -i "$i" 2>/dev/null | awk -v n="$i" \'/Chip Count/ {cc=$NF} $1=="Process" && $2 ~ /^id:[0-9]+/ { pid[++np]=substr($2,4); nam[np]=substr($4,6); mem[np]=substr($6,12) } $1=="Chip" && $2=="ID" { card=n*(cc?cc:1)+$NF; for(j=1;j<=np;j++) print card"\\t"pid[j]"\\t"nam[j]"\\t"mem[j]; np=0 } END { if(np>0){ card=n*(cc?cc:1); for(j=1;j<=np;j++) print card"\\t"pid[j]"\\t"nam[j]"\\t"mem[j] } }\'; done); echo "$PM"',
       'echo "@PC"; for p in $(echo "$PM" | awk \'{print $2}\'); do echo "$p $(grep -oE "docker[-/][0-9a-f]{12,}" /proc/$p/cgroup 2>/dev/null | head -1 | cut -c 8-) $(ps -o user= -p $p 2>/dev/null)"; done',
       'echo "@PT"; ps -eo pid,ppid',
     ].join("; ");

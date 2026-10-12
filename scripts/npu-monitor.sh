@@ -6,9 +6,10 @@
 echo "| NPU-ID | AICore(%) | HBM-Usage(MB) |"
 for n in $(npu-smi info -l 2>/dev/null | awk '/NPU ID[[:space:]]*:/{print $NF}'); do
   npu-smi info -t usages -i "$n" 2>/dev/null | awk -v npu="$n" '
+    /Chip Count/ {cc=$NF}
     /Aicore Usage Rate/ {ac=$NF}
     /HBM Usage Rate/ {hu=$NF}
     /HBM Capacity/ {hc=$NF}
-    /Chip ID/ {id=npu; used=int(hc*hu/100); printf "| %d | %s | %d / %d |\n", id, ac, used, hc}
+    /Chip ID/ {id=npu*(cc?cc:1)+$NF; used=int(hc*hu/100); printf "| %d | %s | %d / %d |\n", id, ac, used, hc}
   '
 done
