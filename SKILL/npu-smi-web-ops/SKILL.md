@@ -24,6 +24,8 @@ Node.js 监控面板:每 5s SSH 轮询 NPU 主机采集卡占用,每 30s 独立�
 | 模型名为空 | `--model-path` 尾部带 `/`(如 `/home/weights/GLM-5.2-w8a8/`),`split("/").pop()` 得空串 | 先 `mp[1].replace(/\/+$/, "").split("/").pop()` |
 | 容器名显示"宿主" | cgroup 有 `/docker/<id>`(docker 默认)与 `docker-<id>`(systemd)两种格式 | `grep -oE "docker[-/][0-9a-f]{12,}" \| head -1 \| cut -c 8-`(不可用 `tr -dc`,会残留 hex 字母) |
 | 采集不到容器内进程 | 容器 PID namespace 隔离,宿主 `ps` 不可见 | 该机器当前可能真无服务;用 `docker top <容器>` 二次确认 |
+| PD 分离(prefill/decode)只显示一个实例 | 去重键为 `model+container`,prefill/decode 同名同容器被误合并 | 去重键改 `pid+model`;解析 `--disaggregation-mode` 标注角色(prefill/decode) |
+| decode 实例误占 0 卡 | npu-smi 把各 launch_server 主进程统一登记在 0 卡,祖先链含主进程即判占用 | 卡归属优先用工作/调度子进程;无子进程(单进程模型)才回退含主进程 |
 
 **关键坑**:`pollModels` 用 `status[name] = { ...result, ..., models: status[name].models }` 保留 models 字段,否则 5s 的 `pollAll` 会覆盖清空。
 

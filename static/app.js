@@ -111,8 +111,8 @@ function statusHTML(s) {
           <div class="model-title">运行模型</div>
           ${(s.models || []).map((m) => `
           <div class="model-item" title="${esc(m.model)}">
-            <div class="model-name"><span class="model-fw model-fw-${esc(m.fw || "unknown")}">${esc(m.fw || "?")}</span>${esc(m.model)}<span class="model-cont"> · ${esc(m.container)}</span></div>
-            <div class="model-row2">PID ${m.pid} · ${esc(fmtUptime(m.uptime))}${(m.cards && m.cards.length) ? ` · 卡 ${m.cards.join(",")}` : ""}</div>
+            <div class="model-name"><span class="model-fw model-fw-${esc(m.fw || "unknown")}">${esc(m.fw || "?")}</span>${esc(m.model)}${m.pd ? `<span class="model-pd model-pd-${esc(m.pd)}">${esc(m.pd)}</span>` : ""}<span class="model-cont"> · ${esc(m.container)}</span></div>
+            <div class="model-row2">PID ${m.pid} · ${esc(fmtUptime(m.uptime))}${(m.cards && m.cards.length) ? ` · 卡 ${m.cards.join(",")}` : ""}${m.port ? ` · 端口 ${m.port}` : ""}</div>
           </div>`).join("")}
         </div>`
       : "";

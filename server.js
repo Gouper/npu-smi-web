@@ -181,11 +181,19 @@ function parseModels(text) {
   }
   const models = [];
   const seen = new Set();
-  const push = (model, container, pid, uptime, fw) => {
-    const key = model + "|" + container;
+  /** 从启动参数解析推理框架与 PD 分离角色(prefill/decode) */
+  const parseLaunch = (args) => ({
+    fw: /vllm/i.test(args) ? "vllm" : "sglang",
+    pd: (args.match(/--disaggregation-mode[= ]+(\S+)/) || [])[1] || null,
+    port: Number((args.match(/--port[= ]+(\d+)/) || [])[1]) || null,
+  });
+  const push = (model, container, pid, uptime, args) => {
+    // 同一实例可能被宿主 ps 与 docker top 同时采到, 按 PID 去重;
+    // PD 分离的 prefill/decode 是同名同容器的不同进程, 必须按 PID 分别保留
+    const key = pid + "|" + model;
     if (seen.has(key)) return;
     seen.add(key);
-    models.push({ model: model.replace(/\/+$/, ""), container, pid: parseInt(pid, 10), uptime, fw });
+    models.push({ model: model.replace(/\/+$/, ""), container, pid: parseInt(pid, 10), uptime, ...parseLaunch(args) });
   };
   for (const l of psLines) {
     const m = l.match(/^(\d+)\s+(\S+)\s+(.*)$/);
@@ -195,7 +203,7 @@ function parseModels(text) {
     if (!mp) continue;
     const cid = cgMap[pid];
     const container = (cid && dcMap[cid.slice(0, 12)]) || "宿主";
-    push(mp[1], container, pid, etime, /vllm/i.test(args) ? "vllm" : "sglang");
+    push(mp[1], container, pid, etime, args);
   }
   for (const l of ctLines) {
     const parts = l.split("\t");
@@ -203,7 +211,7 @@ function parseModels(text) {
     const pid = parts[0], etime = parts[1], container = parts[2], args = parts.slice(3).join(" ");
     const mp = args.match(/--model(?:-path)?\s+(\S+)/) || args.match(/vllm\s+serve\s+(\S+)/) || args.match(/--served-model-name\s+(\S+)/);
     if (!mp) continue;
-    push(mp[1], container, pid, etime, /vllm/i.test(args) ? "vllm" : "sglang");
+    push(mp[1], container, pid, etime, args);
   }
   // 卡占用归属: 卡上进程的祖先链中包含模型主 PID, 即视为该模型占用此卡
   const cardPids = {};
@@ -225,10 +233,12 @@ function parseModels(text) {
     return false;
   };
   for (const m of models) {
-    m.cards = Object.keys(cardPids)
-      .filter((c) => [...cardPids[c]].some((p) => isDesc(p, m.pid)))
-      .map(Number)
-      .sort((a, b) => a - b);
+    // 优先用工作/调度子进程判断占用卡: PD 分离各实例的主进程会被 npu-smi 统一登记在 0 卡,
+    // 只用主进程会把 decode 误标成占用 0 卡; 无子进程时(单进程模型)才回退到含主进程判断
+    let cards = Object.keys(cardPids).filter((c) =>
+      [...cardPids[c]].some((p) => String(p) !== String(m.pid) && isDesc(p, m.pid)));
+    if (!cards.length) cards = Object.keys(cardPids).filter((c) => [...cardPids[c]].some((p) => isDesc(p, m.pid)));
+    m.cards = cards.map(Number).sort((a, b) => a - b);
   }
   // 全量卡进程: 卡/PID/进程名/显存, 归属到模型(祖先链)与容器(cgroup)
   const pcMap = {};

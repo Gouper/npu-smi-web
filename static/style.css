@@ -515,3 +515,20 @@ main { position: relative; padding: 28px 32px 16px; }
 .model-fw-vllm { background: oklch(0.60 0.15 70); color: oklch(0.99 0.01 90); }
 .model-fw-sglang { background: oklch(0.52 0.18 350); color: oklch(0.99 0.01 90); }
 .model-fw-unknown { background: var(--faint); color: var(--card); }
+
+/* ---- PD 分离角色徽标: prefill/decode ---- */
+.model-pd {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 16px;
+  vertical-align: 2px;
+  color: oklch(0.99 0.005 90);
+}
+.model-pd-prefill { background: oklch(0.55 0.16 250); }
+.model-pd-decode { background: oklch(0.60 0.13 155); }
